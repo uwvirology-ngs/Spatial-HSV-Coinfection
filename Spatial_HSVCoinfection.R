@@ -661,14 +661,14 @@ gaussburst<-function(burst_size,gaussian_mask){
   if(sum(burst)>burst_size){ 
     exc<-sum(burst)-burst_size;
     tmp<-sample(seq(1,length(burst))[c(burst>0)],exc,replace=TRUE);
-    counts<-as.data.frame(table(tmp),stringsAsFactors=F);
-    burst[as.integer(counts$tmp)]<-burst[as.integer(counts$tmp)]-as.integer(counts$Freq);
+    counts <- tabulate(tmp, nbins = length(burst))
+    burst <- burst - counts
     burst[burst<0]<-0;
   }else if(sum(burst)<burst_size){
     def<-burst_size-sum(burst);
     tmp<-sample(seq(1,length(burst)),def,replace=TRUE);
-    counts<-as.data.frame(table(tmp),stringsAsFactors=F);
-    burst[as.integer(counts$tmp)]<-burst[as.integer(counts$tmp)]+as.integer(counts$Freq);
+    counts <- tabulate(tmp, nbins = length(burst))
+    burst <- burst + counts
   }
   return(burst);
 }
