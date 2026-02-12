@@ -3,185 +3,76 @@
 # Fred Hutchinson Cancer Research Center
 # Tracks two virus types and coinfection without recombination
 
-# INITIALIZATION: lines to run when this file is sourced
-rm(list=ls()); 
+# ini ---------------------------------------------------------------------
+
+rm(list = ls()); 
 library(RColorBrewer);
 
-# 0.  MAIN FUNCTION-only used if there is no wrapper file
-Spatial_main<-function(visualize='off',param_file=NULL,settings_file=NULL){
-  options(error=recover);
-  settings<-get_default_settings();
-  parameters<-get_default_parameters();
-  
-  #Load settings from file if provided
-  if(!is.null(settings_file)){
-    settings<-load_settings_from_file(settings_file,settings);
-  }
-  
-  #Load parameters from file if provided
-  if(!is.null(param_file)){
-    parameters<-load_parameters_from_file(param_file,parameters);
-  }
-  
-  #modify settings and parameters here or use a wrapper
-  settings$visualize<-visualize;
-  
-  #initialize and run sim
-  settings<-init_grid(settings,parameters);
-  simulation(settings,parameters);
+# GLOBAL SETTINGS ---------------------------------------------------------
+
+SETTINGS <- list()
+
+SETTINGS$L              <- 200;             # Specify grid dimensions
+SETTINGS$dirname        <- 'Results/';   	# Directory to store results
+SETTINGS$out_fname      <- 'results.tsv';	# File to store cell and virus counts
+SETTINGS$sim_length     <- 1;				# Length of simulation in hours
+SETTINGS$save_grids     <- TRUE;            # Save grids at the end of the sim? 
+SETTINGS$visualize      <-'off';            # Options: 'screen','pdf','off','gif'
+SETTINGS$refr_freq      <-25;				# Refresh frequency (hrs)
+SETTINGS$site_scale     <-50;               # how many microns is one site
+SETTINGS$place_virus1   <-list(type='infected producer',num=10);  #Initial virus 1
+SETTINGS$place_virus2   <-list(type='infected producer',num=10);  #Initial virus 2
+
+# GLOBAL PARAMETERS -------------------------------------------------------
+
+PARAMETERS<-list(); 
+
+# Rates (per site or cell per day)
+PARAMETERS$max_rate                 <-25;       # Sets time resolution, should be greater than or equal to sum of all rates for a given state
+
+# Uninfected cells
+PARAMETERS$uninf_cell_death         <-0;        # Rate of uninfected cell death 
+PARAMETERS$infectivity_free         <-0.1;      # Infectivity (per virus per cell per day), will get multiplied by number of free viruses at the site
+PARAMETERS$cell_div                 <-0.077;    # Rate of generation of new susceptible cells (repop of empty sites)
+
+# Infected cells
+PARAMETERS$inf_cell_death           <-1.25;     # Rate of infected cell death due to infection
+PARAMETERS$viral_lag                <-8;		# Rate at which inf non-producer becomes viral producing cell (per cell per day)
+PARAMETERS$vir_prod_rate_mean       <-100000;	# Rate at which an infected cell produces free virus (per cell per day, mean and sd)
+PARAMETERS$vir_prod_rate_sd         <-10000;
+
+# Virus
+PARAMETERS$diff_rate_virus          <- 12;      # Rate of diffusion of free virus (sites moved per day, depends on diffusivity, size of virion, viscosity of medium, etc)
+PARAMETERS$freevirus_decay          <- 8.8;     # Rate of decay of free virus (per day)
+PARAMETERS$cavirus_decay            <- 8.8;     # Rate of decay of cell-associated virus (per day)
+PARAMETERS$viral_ejection_rate      <- 10;      # Rate of conversion from cell-associated to free virus (per day)
+PARAMETERS$ca_to_free_proportion    <- 0.9;     # Proportion of CA virus converted to free virus per ejection event
+
+# Probabilities, fractions, etc
+PARAMETERS$host_density             <-1;        # Fraction of sites occupied by susceptible cells at start	
+PARAMETERS$diff_range               <-3;        # n x n site, default n = 3, i.e. immediate Moore neighbourhood. 
+
+# main --------------------------------------------------------------------
+Spatial_main <- function() {
+  init_grid();
+  simulation();
 }
 
 ## FUNCTIONS: all the functions that are needed for the simulation are below this line
 
-# 1a.  Get settings for the simulation
-get_default_settings<-function(){
-  settings<-list(L=200);                          #Specify grid dimensions
-  settings$dirname<-'Results/';   								#Directory to store results
-  settings$out_fname<-'results.tsv';							#File to store cell and virus counts
-  settings$sim_length<-1;											#Length of simulation in hours
-  settings$save_grids<-TRUE;          #Save grids at the end of the sim? 
-  
-  #Visualization
-  settings$visualize<-'off';                         #Options: 'screen','pdf','off','gif'
-  settings$refr_freq<-25;												#Refresh frequency (hrs)
-  settings$site_scale<-50; #how many microns is one site
-  
-  #Place virus
-  settings$place_virus1<-list(type='infected producer',num=10);  #Initial virus 1
-  settings$place_virus2<-list(type='infected producer',num=10);  #Initial virus 2
-  
-  return(settings);
-}
-
-# 1b2. Load settings from CSV file
-# CSV file should have two columns: setting_name, value
-# Example:
-# setting_name,value
-# L,150
-# sim_length,10
-# save_grids,TRUE
-# refr_freq,50
-load_settings_from_file<-function(settings_file,settings){
-  if(!file.exists(settings_file)){
-    stop(paste('Settings file not found:',settings_file));
-  }
-  
-  #Read CSV file
-  settings_data<-read.csv(settings_file,stringsAsFactors=FALSE);
-  
-  #Check that file has correct columns
-  if(!all(c('setting_name','value') %in% colnames(settings_data))){
-    stop('Settings file must have columns: setting_name, value');
-  }
-  
-  #Update settings
-  for(i in 1:nrow(settings_data)){
-    setting_name<-settings_data$setting_name[i];
-    setting_value<-settings_data$value[i];
-    
-    #Check if setting exists
-    if(setting_name %in% names(settings)){
-      #Convert to appropriate type
-      if(is.numeric(settings[[setting_name]])){
-        setting_value<-as.numeric(setting_value);
-      }else if(is.logical(settings[[setting_name]])){
-        setting_value<-as.logical(setting_value);
-      }
-      settings[[setting_name]]<-setting_value;
-      print(paste('Updated setting:',setting_name,'=',setting_value));
-    }else{
-      warning(paste('Setting',setting_name,'not found in default settings. Skipping.'));
-    }
-  }
-  
-  return(settings);
-}
-
-# 1c. Get default parameters 
-get_default_parameters<-function(){
-  parameters<-list(); 
-  
-  #Rates (per site or cell per day)
-  parameters$max_rate<-25;						  #Sets time resolution, should be greater than or equal to sum of all rates for a given state
-  
-  #Uninfected cells
-  parameters$uninf_cell_death<-0;	#Rate of uninfected cell death 
-  parameters$infectivity_free<-0.1;				#Infectivity (per virus per cell per day), will get multiplied by number of free viruses at the site
-  parameters$cell_div<-0.077; 					#Rate of generation of new susceptible cells (repop of empty sites)
-  
-  #Infected cells
-  parameters$inf_cell_death<-1.25;			#Rate of infected cell death due to infection
-  parameters$viral_lag<-8;						  #Rate at which inf non-producer becomes viral producing cell (per cell per day)
-  parameters$vir_prod_rate_mean<-100000;	#Rate at which an infected cell produces free virus (per cell per day, mean and sd)
-  parameters$vir_prod_rate_sd<-10000;
-  
-  #Virus
-  parameters$diff_rate_virus<-12; 						  #Rate of diffusion of free virus (sites moved per day, depends on diffusivity, size of virion, viscosity of medium, etc)
-  parameters$freevirus_decay<-8.8;		#Rate of decay of free virus (per day)
-  parameters$cavirus_decay<-8.8;		#Rate of decay of cell-associated virus (per day)
-  parameters$viral_ejection_rate<-10;  #Rate of conversion from cell-associated to free virus (per day)
-  parameters$ca_to_free_proportion<-0.9;  #Proportion of CA virus converted to free virus per ejection event
-  
-  #Probabilities, fractions, etc
-  parameters$host_density<-1;           #Fraction of sites occupied by susceptible cells at start	
-  parameters$diff_range<-3;						  #n x n site, default n = 3, i.e. immediate Moore neighbourhood. 
-  
-  return(parameters);
-}
-
-# 1d. Load parameters from CSV file
-# CSV file should have two columns: parameter_name, value
-# Example:
-# parameter_name,value
-# max_rate,30
-# infectivity_free,0.15
-load_parameters_from_file<-function(param_file,parameters){
-  if(!file.exists(param_file)){
-    stop(paste('Parameter file not found:',param_file));
-  }
-  
-  #Read CSV file
-  param_data<-read.csv(param_file,stringsAsFactors=FALSE);
-  
-  #Check that file has correct columns
-  if(!all(c('parameter_name','value') %in% colnames(param_data))){
-    stop('Parameter file must have columns: parameter_name, value');
-  }
-  
-  #Update parameters
-  for(i in 1:nrow(param_data)){
-    param_name<-param_data$parameter_name[i];
-    param_value<-param_data$value[i];
-    
-    #Check if parameter exists
-    if(param_name %in% names(parameters)){
-      #Convert to numeric if needed
-      if(is.numeric(parameters[[param_name]])){
-        param_value<-as.numeric(param_value);
-      }
-      parameters[[param_name]]<-param_value;
-      print(paste('Updated parameter:',param_name,'=',param_value));
-    }else{
-      warning(paste('Parameter',param_name,'not found in default parameters. Skipping.'));
-    }
-  }
-  
-  return(parameters);
-}
-
 # 2. Initialize grid and other arrays
-init_grid<-function(settings,parameters){
+init_grid <- function() {
   print('Starting simulation.. hold on to your hat!');
   
   #Compute simulation length in number of updates
-  settings$tot_updates<-settings$sim_length*parameters$max_rate;
+  SETTINGS$tot_updates <<- SETTINGS$sim_length*PARAMETERS$max_rate;
   
   #Create spatial grid as an environment for fast hashed access
   #Each grid location is accessed via key "i,j" and contains a list with cell_state and virus counts for each type
-  spatial_grid<<-new.env(hash=TRUE);
-  for(i in 1:settings$L){
-    for(j in 1:settings$L){
-      key<-paste(i,j,sep=",");
+  spatial_grid <<- new.env(hash=TRUE);
+  for(i in 1:SETTINGS$L){
+    for(j in 1:SETTINGS$L){
+      key <- paste(i,j,sep=",");
       spatial_grid[[key]]<<-list(cell_state=as.integer(0), 
                                  free_virus1=as.integer(0), ca_virus1=as.integer(0),
                                  free_virus2=as.integer(0), ca_virus2=as.integer(0));
@@ -189,29 +80,29 @@ init_grid<-function(settings,parameters){
   }
   
   #Directories
-  print(paste('Results directory =',settings$dirname));
-  dir.create(settings$dirname,showWarnings=FALSE);
-  save(parameters,file=paste(settings$dirname,'/simulationparameters',sep=''));
-  save(settings,file=paste(settings$dirname,'/simulationsettings',sep=''));
-  if(settings$visualize=='gif')dir.create(paste(settings$dirname,'/imgs',sep=''),showWarnings=FALSE)
+  print(paste('Results directory =',SETTINGS$dirname));
+  dir.create(SETTINGS$dirname,showWarnings=FALSE);
+  save(PARAMETERS,file=paste(SETTINGS$dirname,'/simulationparameters',sep=''));
+  save(SETTINGS,file=paste(SETTINGS$dirname,'/simulationsettings',sep=''));
+  if(SETTINGS$visualize=='gif') dir.create(paste(SETTINGS$dirname,'/imgs',sep=''),showWarnings=FALSE)
   
   #Dynamic variables - this stores time elapsed and population counts
-  dynamic<<-list(num_updates=0,time=0,
+  dynamic <<- list(num_updates=0,time=0,
                  susceptible_cells=0,infected_nonprodcells=0,infected_prodcells=0,dead_cells=0,
                  virions1=0,ca_virions1=0,virions2=0,ca_virions2=0,
                  max_vl=0,max_vl_time=0,
                  viral_cells1=0,ca_viral_cells1=0,viral_cells2=0,ca_viral_cells2=0,
                  coinfected_cells=0);
-  output_results(settings,dynamic,T); #write header
+  output_results(dynamic,T); #write header
   
   #Visualization setup
-  if(settings$visualize!='off'){
-    if(settings$visualize=='pdf'){
-      pdf(file=paste(settings$dirname,'/Results.pdf',sep=''),
+  if(SETTINGS$visualize!='off'){
+    if(SETTINGS$visualize=='pdf'){
+      pdf(file=paste(SETTINGS$dirname,'/Results.pdf',sep=''),
           width=8,height=4); 
-    }else if(settings$visualize=='screen'){
+    }else if(SETTINGS$visualize=='screen'){
       quartz(width=8,height=4);   
-    }else if(settings$visualize=='gif'){
+    }else if(SETTINGS$visualize=='gif'){
       # library(animation)
       # png(file=paste(settings$dirname,'/imgs/Results.png',sep=''))
     }else{
@@ -220,40 +111,40 @@ init_grid<-function(settings,parameters){
     par(mar=c(1,1,2,1),oma=c(1,0,0,0));
     layout(matrix(c(1:2),1,2,byrow = TRUE),widths=c(1,1),heights=c(1,1));
   }
-  gc(); return(settings)
+  gc(); 
 }
 
 # 3. SIMULATION
-simulation<-function(settings,parameters){
+simulation<-function(){
   
-  gaussian_mask_diffusion<-compute_gaussian(parameters$diff_range); 
+  gaussian_mask_diffusion<-compute_gaussian(PARAMETERS$diff_range); 
   
-  place_host(settings,parameters); #Place host cells
-  if(settings$place_virus1$type!='none') place_virus(settings,virus_type=1); #Place virus 1
-  if(settings$place_virus2$type!='none') place_virus(settings,virus_type=2); #Place virus 2
+  place_host(); #Place host cells
+  if(SETTINGS$place_virus1$type!='none') place_virus(virus_type=1); #Place virus 1
+  if(SETTINGS$place_virus2$type!='none') place_virus(virus_type=2); #Place virus 2
   
   dynamic$num_updates<<-0;
-  compute_totals(settings,parameters);
-  output_results(settings,dynamic,F);
-  if(settings$visualize!='off'){
-    visualize(settings); 
+  compute_totals();
+  output_results(dynamic,F);
+  if(SETTINGS$visualize!='off'){
+    visualize(); 
   }
-  next_screen_grab<-dynamic$num_updates+settings$refr_freq;
+  next_screen_grab<-dynamic$num_updates+SETTINGS$refr_freq;
   
-  while(dynamic$num_updates<settings$tot_updates){
+  while(dynamic$num_updates < SETTINGS$tot_updates){
     
     #Generate random order of sites to update
-    update_order<-sample(seq(1,settings$L^2),settings$L^2,replace=TRUE)
-    row_order<-((update_order-1)%%settings$L)+1;
-    col_order<-floor((update_order-1)/settings$L)+1;
-    dice_cells_all<-runif(settings$L^2,min=0,max=1);
-    dice_v1_all<-runif(settings$L^2,min=0,max=1);
-    dice_v2_all<-runif(settings$L^2,min=0,max=1);
-    dice_cav1_all<-runif(settings$L^2,min=0,max=1);
-    dice_cav2_all<-runif(settings$L^2,min=0,max=1);
+    update_order<-sample(seq(1,SETTINGS$L^2),SETTINGS$L^2,replace=TRUE)
+    row_order<-((update_order-1)%%SETTINGS$L)+1;
+    col_order<-floor((update_order-1)/SETTINGS$L)+1;
+    dice_cells_all<-runif(SETTINGS$L^2,min=0,max=1);
+    dice_v1_all<-runif(SETTINGS$L^2,min=0,max=1);
+    dice_v2_all<-runif(SETTINGS$L^2,min=0,max=1);
+    dice_cav1_all<-runif(SETTINGS$L^2,min=0,max=1);
+    dice_cav2_all<-runif(SETTINGS$L^2,min=0,max=1);
     
     #Update sites in random order (same as picking a random site to update one at a time)
-    for(rep in 1:settings$L^2){
+    for(rep in 1:SETTINGS$L^2){
       i<-row_order[rep];
       j<-col_order[rep];
       dice_cells<-dice_cells_all[rep];
@@ -276,7 +167,7 @@ simulation<-function(settings,parameters){
       if(site$cell_state==0||site$cell_state==4){
         
         #Event 0.1: occupation by susceptible
-        if(dice_cells<=parameters$cell_div/parameters$max_rate){
+        if(dice_cells<=PARAMETERS$cell_div/PARAMETERS$max_rate){
           spatial_grid[[key]]$cell_state<-1;
         }
         
@@ -286,7 +177,7 @@ simulation<-function(settings,parameters){
         
         #Event 1.1: infection due to free virus at the site (any virus type can infect)
         total_free_virus<-site$free_virus1+site$free_virus2;
-        if(total_free_virus>0 && dice_cells<=parameters$infectivity_free*total_free_virus/parameters$max_rate){
+        if(total_free_virus>0 && dice_cells<=PARAMETERS$infectivity_free*total_free_virus/PARAMETERS$max_rate){
           spatial_grid[[key]]$cell_state<-2; #becomes an infected cell
           #Remove one virus of random type
           virus_probs<-c(site$free_virus1,site$free_virus2)/total_free_virus;
@@ -298,7 +189,7 @@ simulation<-function(settings,parameters){
           }
           
           #Event 1.2: apoptosis
-        }else if(dice_cells<=parameters$uninf_cell_death/parameters$max_rate){
+        }else if(dice_cells<=PARAMETERS$uninf_cell_death/PARAMETERS$max_rate){
           spatial_grid[[key]]$cell_state<-4;
         } 
         
@@ -306,11 +197,11 @@ simulation<-function(settings,parameters){
       }else if(site$cell_state==2){					
         
         #Event 2.1: become a virus-producing cell
-        if(dice_cells<=parameters$viral_lag/parameters$max_rate){
+        if(dice_cells<=PARAMETERS$viral_lag/PARAMETERS$max_rate){
           spatial_grid[[key]]$cell_state<-3; #becomes virus-producing infected cell
           
           #Event 2.2: dies 
-        }else if(dice_cells<=(parameters$viral_lag+parameters$uninf_cell_death)/parameters$max_rate){
+        }else if(dice_cells<=(PARAMETERS$viral_lag+PARAMETERS$uninf_cell_death)/PARAMETERS$max_rate){
           spatial_grid[[key]]$cell_state<-4; #death of infected cell
         }
         
@@ -318,18 +209,18 @@ simulation<-function(settings,parameters){
       }else if(site$cell_state==3){
         
         #Event 3.1: die
-        if(dice_cells<=parameters$inf_cell_death/parameters$max_rate){
+        if(dice_cells<=PARAMETERS$inf_cell_death/PARAMETERS$max_rate){
           spatial_grid[[key]]$cell_state<-4; #death of infected cell
           
           #Event 3.2: produce cell-associated virus (virus 1)
         }else{
-          new_virus1<-max(0,round(rnorm(1,mean=parameters$vir_prod_rate_mean/parameters$max_rate,
-                                        sd=parameters$vir_prod_rate_sd/parameters$max_rate)));
+          new_virus1<-max(0,round(rnorm(1,mean=PARAMETERS$vir_prod_rate_mean/PARAMETERS$max_rate,
+                                        sd=PARAMETERS$vir_prod_rate_sd/PARAMETERS$max_rate)));
           spatial_grid[[key]]$ca_virus1<-site$ca_virus1+new_virus1;
           
           #Event 3.3: produce cell-associated virus (virus 2)
-          new_virus2<-max(0,round(rnorm(1,mean=parameters$vir_prod_rate_mean/parameters$max_rate,
-                                        sd=parameters$vir_prod_rate_sd/parameters$max_rate)));
+          new_virus2<-max(0,round(rnorm(1,mean=PARAMETERS$vir_prod_rate_mean/PARAMETERS$max_rate,
+                                        sd=PARAMETERS$vir_prod_rate_sd/PARAMETERS$max_rate)));
           spatial_grid[[key]]$ca_virus2<-site$ca_virus2+new_virus2;
         }
       }
@@ -341,12 +232,12 @@ simulation<-function(settings,parameters){
       if(site$ca_virus1>0){
         
         #Event 0a: Decay
-        ca_viral_decay(i,j,parameters,dice_cav1,virus_type=1);
+        ca_viral_decay(i,j,dice_cav1,virus_type=1);
         
         #Event 0b: Ejection to free virus (probability increases with number of CA viruses)
         site<-spatial_grid[[key]];  #Re-fetch after decay
-        if(site$ca_virus1>0 && dice_cav1<=parameters$viral_ejection_rate*site$ca_virus1/parameters$max_rate){
-          ca_viral_ejection(i,j,parameters,virus_type=1);
+        if(site$ca_virus1>0 && dice_cav1<=PARAMETERS$viral_ejection_rate*site$ca_virus1/PARAMETERS$max_rate){
+          ca_viral_ejection(i,j,virus_type=1);
         }
       }
       
@@ -356,12 +247,12 @@ simulation<-function(settings,parameters){
       if(site$ca_virus2>0){
         
         #Event 0a: Decay
-        ca_viral_decay(i,j,parameters,dice_cav2,virus_type=2);
+        ca_viral_decay(i,j,dice_cav2,virus_type=2);
         
         #Event 0b: Ejection to free virus
         site<-spatial_grid[[key]];
-        if(site$ca_virus2>0 && dice_cav2<=parameters$viral_ejection_rate*site$ca_virus2/parameters$max_rate){
-          ca_viral_ejection(i,j,parameters,virus_type=2);
+        if(site$ca_virus2>0 && dice_cav2<=PARAMETERS$viral_ejection_rate*site$ca_virus2/PARAMETERS$max_rate){
+          ca_viral_ejection(i,j,virus_type=2);
         }
       }
       
@@ -372,11 +263,11 @@ simulation<-function(settings,parameters){
       if(site$free_virus1>0){
         
         #Event 0a: Decay
-        viral_decay(i,j,parameters,dice_v1,virus_type=1);
+        viral_decay(i,j,dice_v1,virus_type=1);
         
         #Event 0b: Diffusion of remaining free virus at site
-        if(dice_v1<=parameters$diff_rate_virus/parameters$max_rate){
-          diffusion_virus(settings,i,j,gaussian_mask_diffusion,parameters,virus_type=1);}			
+        if(dice_v1<=PARAMETERS$diff_rate_virus/PARAMETERS$max_rate){
+          diffusion_virus(i,j,gaussian_mask_diffusion,virus_type=1);}			
         
       }
       
@@ -386,11 +277,11 @@ simulation<-function(settings,parameters){
       if(site$free_virus2>0){
         
         #Event 0a: Decay
-        viral_decay(i,j,parameters,dice_v2,virus_type=2);
+        viral_decay(i,j,dice_v2,virus_type=2);
         
         #Event 0b: Diffusion of remaining free virus at site
-        if(dice_v2<=parameters$diff_rate_virus/parameters$max_rate){
-          diffusion_virus(settings,i,j,gaussian_mask_diffusion,parameters,virus_type=2);}			
+        if(dice_v2<=PARAMETERS$diff_rate_virus/PARAMETERS$max_rate){
+          diffusion_virus(i,j,gaussian_mask_diffusion,virus_type=2);}			
         
       }
       
@@ -398,13 +289,13 @@ simulation<-function(settings,parameters){
     }
     
     dynamic$num_updates<<-dynamic$num_updates+1;
-    compute_totals(settings,parameters);
+    compute_totals();
     
-    if(settings$visualize!='off'&&dynamic$num_updates==next_screen_grab){
-      visualize(settings);
-      next_screen_grab<-dynamic$num_updates+settings$refr_freq;
+    if(SETTINGS$visualize!='off'&&dynamic$num_updates==next_screen_grab){
+      visualize();
+      next_screen_grab<-dynamic$num_updates+SETTINGS$refr_freq;
     }
-    output_results(settings,results,F);
+    output_results(results,F);
     if(dynamic$susceptible_cells==0 ||
        (dynamic$virions1==0&&dynamic$ca_virions1==0&&
         dynamic$virions2==0&&dynamic$ca_virions2==0&&
@@ -414,17 +305,17 @@ simulation<-function(settings,parameters){
     }
   }
   
-  end_simulation(settings,parameters);
+  end_simulation();
 }
 
 #PLOT DYNAMICS - creates summary plots from results.tsv
-plot_dynamics<-function(settings){
+plot_dynamics<-function(){
   #Read results file
-  results<-read.table(paste(settings$dirname,'/',settings$out_fname,sep=''),
+  results<-read.table(paste(SETTINGS$dirname,'/',SETTINGS$out_fname,sep=''),
                       header=TRUE,sep='\t',stringsAsFactors=FALSE);
   
   #Create plot file
-  png(file=paste(settings$dirname,'/dynamics.png',sep=''),
+  png(file=paste(SETTINGS$dirname,'/dynamics.png',sep=''),
       width=12,height=5,units='in',res=300);
   par(mfrow=c(1,3),mar=c(4,4,2,1));
   
@@ -468,22 +359,22 @@ plot_dynamics<-function(settings){
   }
   
   dev.off();
-  print(paste('Dynamics plot saved to',paste(settings$dirname,'/dynamics.png',sep='')));
+  print(paste('Dynamics plot saved to',paste(SETTINGS$dirname,'/dynamics.png',sep='')));
 }
 
 #PLACE HOST cells
-place_host<-function(settings,parameters){
-  if(parameters$host_density==1){
-    for(i in 1:settings$L){
-      for(j in 1:settings$L){
+place_host<-function(){
+  if(PARAMETERS$host_density==1){
+    for(i in 1:SETTINGS$L){
+      for(j in 1:SETTINGS$L){
         key<-paste(i,j,sep=",");
         spatial_grid[[key]]$cell_state<-1;
       }
     }
   }else{
-    for(i in 1:settings$L){
-      for(j in 1:settings$L){
-        if(runif(1)<parameters$host_density){
+    for(i in 1:SETTINGS$L){
+      for(j in 1:SETTINGS$L){
+        if(runif(1)<PARAMETERS$host_density){
           key<-paste(i,j,sep=",");
           spatial_grid[[key]]$cell_state<-1;
         }
@@ -494,15 +385,15 @@ place_host<-function(settings,parameters){
 }
 
 #PLACE VIRUS
-place_virus<-function(settings,virus_type=1){
-  place_settings<-if(virus_type==1) settings$place_virus1 else settings$place_virus2;
+place_virus<-function(virus_type=1){
+  place_settings<-if(virus_type==1) SETTINGS$place_virus1 else SETTINGS$place_virus2;
   
   if(place_settings$num==0){
     return(NULL); #do nothing and exit
   }else{
     if(place_settings$type=='single point'){ #place virus at the center of the grid
-      center_i<-settings$L/2;
-      center_j<-settings$L/2;
+      center_i<-SETTINGS$L/2;
+      center_j<-SETTINGS$L/2;
       key<-paste(center_i,center_j,sep=",");
       if(virus_type==1){
         spatial_grid[[key]]$free_virus1<-place_settings$num;
@@ -512,8 +403,8 @@ place_virus<-function(settings,virus_type=1){
       
     }else if(place_settings$type=='random'){ #virus spread randomly on grid
       for(v in 1:place_settings$num){
-        i<-sample(1:settings$L,1);
-        j<-sample(1:settings$L,1);
+        i<-sample(1:SETTINGS$L,1);
+        j<-sample(1:SETTINGS$L,1);
         key<-paste(i,j,sep=",");
         if(virus_type==1){
           spatial_grid[[key]]$free_virus1<-spatial_grid[[key]]$free_virus1+1;
@@ -524,14 +415,14 @@ place_virus<-function(settings,virus_type=1){
       
     }else if(place_settings$type=='infected producer'){ #place infected cell(s) instead of virus
       if(place_settings$num==1){ #at the center of the grid
-        center_i<-settings$L/2;
-        center_j<-settings$L/2;
+        center_i<-SETTINGS$L/2;
+        center_j<-SETTINGS$L/2;
         key<-paste(center_i,center_j,sep=",");
         spatial_grid[[key]]$cell_state<-3; 
       }else{ #randomly on the grid
         for(v in 1:place_settings$num){
-          i<-sample(1:settings$L,1);
-          j<-sample(1:settings$L,1);
+          i<-sample(1:SETTINGS$L,1);
+          j<-sample(1:SETTINGS$L,1);
           key<-paste(i,j,sep=",");
           spatial_grid[[key]]$cell_state<-3;
         }
@@ -541,26 +432,26 @@ place_virus<-function(settings,virus_type=1){
 }
 
 #Calculates plaque diameter in mm
-calc_plaque_size<-function(settings){
+calc_plaque_size<-function(){
   with(dynamic,
-       return(sqrt(dead_cells)*settings$site_scale/1000));
+       return(sqrt(dead_cells)*SETTINGS$site_scale/1000));
 }
 
 #VISUALIZE
-visualize<-function(settings){
-  if(settings$visualize=='gif'){
-    png(file=paste(settings$dirname,'/imgs/',
+visualize<-function(){
+  if(SETTINGS$visualize=='gif'){
+    png(file=paste(SETTINGS$dirname,'/imgs/',
                    round(dynamic$time,digits=1),'.png',sep='')) ;
     par(mar=c(1,1,2,1),oma=c(1,0,0,0));
     layout(matrix(c(1:2),1,2,byrow = TRUE),widths=c(1,1),heights=c(1,1));
   }
   
   #Extract arrays from spatial_grid for visualization
-  cell_state_array<-matrix(0,nrow=settings$L,ncol=settings$L);
-  virus_type_array<-matrix(0,nrow=settings$L,ncol=settings$L);
+  cell_state_array<-matrix(0,nrow=SETTINGS$L,ncol=SETTINGS$L);
+  virus_type_array<-matrix(0,nrow=SETTINGS$L,ncol=SETTINGS$L);
   
-  for(i in 1:settings$L){
-    for(j in 1:settings$L){
+  for(i in 1:SETTINGS$L){
+    for(j in 1:SETTINGS$L){
       key<-paste(i,j,sep=",");
       cell_state_array[i,j]<-spatial_grid[[key]]$cell_state;
       
@@ -607,7 +498,7 @@ visualize<-function(settings){
   #Timestamp
   mtext(paste('Time =',round(dynamic$time,digits=1),'h'),side=1,outer=T);
   
-  if(settings$visualize=='gif'){dev.off()}
+  if(SETTINGS$visualize=='gif'){dev.off()}
 }
 
 #COMPUTE GAUSSIAN kernel - only run once, at the beginning of simulation
@@ -621,7 +512,7 @@ compute_gaussian<-function(mask_range,sig=1.2,amp=1){
 }
 
 #DIFFUSION of free virus
-diffusion_virus<-function(settings,i,j,gaussian_mask,parameters,virus_type=1){
+diffusion_virus<-function(i,j,gaussian_mask,virus_type=1){
   key<-paste(i,j,sep=",");
   site<-spatial_grid[[key]];
   
@@ -633,7 +524,7 @@ diffusion_virus<-function(settings,i,j,gaussian_mask,parameters,virus_type=1){
   }
   
   if(virus_count==1){
-    nbr<-pick_nbr(settings,i,j);
+    nbr<-pick_nbr(i,j);
     if(!is.null(nbr)){
       nbr_key<-paste(nbr[1],nbr[2],sep=",");
       if(virus_type==1){
@@ -651,7 +542,7 @@ diffusion_virus<-function(settings,i,j,gaussian_mask,parameters,virus_type=1){
     }else{
       spatial_grid[[key]]$free_virus2<-0;
     }
-    distrib_progeny(settings,i,j,burst,parameters$diff_range,parameters,virus_type); 
+    distrib_progeny(i,j,burst,PARAMETERS$diff_range,virus_type); 
   }
 }
 
@@ -674,10 +565,10 @@ gaussburst<-function(burst_size,gaussian_mask){
 }
 
 #DISTRIBUTE PROGENY in free virus array for burst or diffusion
-distrib_progeny<-function(settings,i,j,burst,dist_range,parameters,virus_type=1){
+distrib_progeny<-function(i,j,burst,dist_range,virus_type=1){
   temp2<-(dist_range-1)/2;
-  imin<-max(1,i-temp2);imax<-min(i+temp2,settings$L); #deal with edges
-  jmin<-max(1,j-temp2);jmax<-min(j+temp2,settings$L);
+  imin<-max(1,i-temp2);imax<-min(i+temp2,SETTINGS$L); #deal with edges
+  jmin<-max(1,j-temp2);jmax<-min(j+temp2,SETTINGS$L);
   imin1<-temp2-(i-imin)+1;imax1<-temp2+(imax-i)+1;
   jmin1<-temp2-(j-jmin)+1;jmax1<-temp2+(jmax-j)+1;
   
@@ -698,10 +589,10 @@ distrib_progeny<-function(settings,i,j,burst,dist_range,parameters,virus_type=1)
 }
 
 #PICK NEIGHBOUR from immediate moore neighbourhood
-pick_nbr<-function(settings,i,j){
+pick_nbr<-function(i,j){
   delta<-sample(c(-1,0,1),2,replace=TRUE);
   nbr<-c(i,j)+delta;
-  if(any(nbr<1|nbr>settings$L)||sum(delta)==0){
+  if(any(nbr<1|nbr>SETTINGS$L)||sum(delta)==0){
     return(NULL); #outside grid
   }else{
     return(nbr);
@@ -709,66 +600,66 @@ pick_nbr<-function(settings,i,j){
 }
 
 #DECAY of free virus
-viral_decay<-function(i,j,parameters,dice,virus_type=1){
+viral_decay<-function(i,j,dice,virus_type=1){
   key<-paste(i,j,sep=",");
   site<-spatial_grid[[key]];
   
   if(virus_type==1){
     if(site$free_virus1==1){
-      if(dice<parameters$freevirus_decay/parameters$max_rate){
+      if(dice<PARAMETERS$freevirus_decay/PARAMETERS$max_rate){
         spatial_grid[[key]]$free_virus1<-0;
       }
     }else{
-      spatial_grid[[key]]$free_virus1<-round(site$free_virus1*exp(-parameters$freevirus_decay/parameters$max_rate));
+      spatial_grid[[key]]$free_virus1<-round(site$free_virus1*exp(-PARAMETERS$freevirus_decay/PARAMETERS$max_rate));
     }
   }else{
     if(site$free_virus2==1){
-      if(dice<parameters$freevirus_decay/parameters$max_rate){
+      if(dice<PARAMETERS$freevirus_decay/PARAMETERS$max_rate){
         spatial_grid[[key]]$free_virus2<-0;
       }
     }else{
-      spatial_grid[[key]]$free_virus2<-round(site$free_virus2*exp(-parameters$freevirus_decay/parameters$max_rate));
+      spatial_grid[[key]]$free_virus2<-round(site$free_virus2*exp(-PARAMETERS$freevirus_decay/PARAMETERS$max_rate));
     }
   }
 }
 
 #DECAY of cell-associated virus
-ca_viral_decay<-function(i,j,parameters,dice,virus_type=1){
+ca_viral_decay<-function(i,j,dice,virus_type=1){
   key<-paste(i,j,sep=",");
   site<-spatial_grid[[key]];
   
   if(virus_type==1){
     if(site$ca_virus1==1){
-      if(dice<parameters$cavirus_decay/parameters$max_rate){
+      if(dice<PARAMETERS$cavirus_decay/PARAMETERS$max_rate){
         spatial_grid[[key]]$ca_virus1<-0;
       }
     }else{
-      spatial_grid[[key]]$ca_virus1<-round(site$ca_virus1*exp(-parameters$cavirus_decay/parameters$max_rate));
+      spatial_grid[[key]]$ca_virus1<-round(site$ca_virus1*exp(-PARAMETERS$cavirus_decay/PARAMETERS$max_rate));
     }
   }else{
     if(site$ca_virus2==1){
-      if(dice<parameters$cavirus_decay/parameters$max_rate){
+      if(dice<PARAMETERS$cavirus_decay/PARAMETERS$max_rate){
         spatial_grid[[key]]$ca_virus2<-0;
       }
     }else{
-      spatial_grid[[key]]$ca_virus2<-round(site$ca_virus2*exp(-parameters$cavirus_decay/parameters$max_rate));
+      spatial_grid[[key]]$ca_virus2<-round(site$ca_virus2*exp(-PARAMETERS$cavirus_decay/PARAMETERS$max_rate));
     }
   }
 }
 
 #EJECTION of cell-associated virus to free virus
-ca_viral_ejection<-function(i,j,parameters,virus_type=1){
+ca_viral_ejection<-function(i,j,virus_type=1){
   key<-paste(i,j,sep=",");
   site<-spatial_grid[[key]];
   
   if(virus_type==1 && site$ca_virus1>0){
-    num_to_eject<-round(site$ca_virus1*parameters$ca_to_free_proportion);
+    num_to_eject<-round(site$ca_virus1*PARAMETERS$ca_to_free_proportion);
     if(num_to_eject>0){
       spatial_grid[[key]]$ca_virus1<-site$ca_virus1-num_to_eject;
       spatial_grid[[key]]$free_virus1<-site$free_virus1+num_to_eject;
     }
   }else if(virus_type==2 && site$ca_virus2>0){
-    num_to_eject<-round(site$ca_virus2*parameters$ca_to_free_proportion);
+    num_to_eject<-round(site$ca_virus2*PARAMETERS$ca_to_free_proportion);
     if(num_to_eject>0){
       spatial_grid[[key]]$ca_virus2<-site$ca_virus2-num_to_eject;
       spatial_grid[[key]]$free_virus2<-site$free_virus2+num_to_eject;
@@ -777,8 +668,8 @@ ca_viral_ejection<-function(i,j,parameters,virus_type=1){
 }
 
 # OUTPUT 
-output_results<-function(settings,results,header){
-  output_file<-paste(settings$dirname,'/',settings$out_fname,sep='');
+output_results<-function(results,header){
+  output_file<-paste(SETTINGS$dirname,'/',SETTINGS$out_fname,sep='');
   
   if (!nchar(output_file) || output_file == "") {
     stop('No input file');
@@ -791,8 +682,8 @@ output_results<-function(settings,results,header){
 }
 
 # Compute totals of cells and virus
-compute_totals<-function(settings,parameters){
-  dynamic$time<<-dynamic$num_updates/parameters$max_rate;
+compute_totals<-function(){
+  dynamic$time<<-dynamic$num_updates/PARAMETERS$max_rate;
   
   #Count by iterating through spatial_grid
   dynamic$virions1<<-0;
@@ -809,8 +700,8 @@ compute_totals<-function(settings,parameters){
   dynamic$ca_viral_cells2<<-0;
   dynamic$coinfected_cells<<-0;
   
-  for(i in 1:settings$L){
-    for(j in 1:settings$L){
+  for(i in 1:SETTINGS$L){
+    for(j in 1:SETTINGS$L){
       key<-paste(i,j,sep=",");
       site<-spatial_grid[[key]];
       
@@ -844,17 +735,17 @@ compute_totals<-function(settings,parameters){
 }
 
 #END of simulation - save grids
-end_simulation<-function(settings,parameters){
-  if(settings$save_grids){
+end_simulation<-function(){
+  if(SETTINGS$save_grids){
     #Extract arrays from spatial_grid structure for saving
-    cell_state_array<-matrix(0,nrow=settings$L,ncol=settings$L);
-    free_virus1_array<-matrix(0,nrow=settings$L,ncol=settings$L);
-    ca_virus1_array<-matrix(0,nrow=settings$L,ncol=settings$L);
-    free_virus2_array<-matrix(0,nrow=settings$L,ncol=settings$L);
-    ca_virus2_array<-matrix(0,nrow=settings$L,ncol=settings$L);
+    cell_state_array<-matrix(0,nrow=SETTINGS$L,ncol=SETTINGS$L);
+    free_virus1_array<-matrix(0,nrow=SETTINGS$L,ncol=SETTINGS$L);
+    ca_virus1_array<-matrix(0,nrow=SETTINGS$L,ncol=SETTINGS$L);
+    free_virus2_array<-matrix(0,nrow=SETTINGS$L,ncol=SETTINGS$L);
+    ca_virus2_array<-matrix(0,nrow=SETTINGS$L,ncol=SETTINGS$L);
     
-    for(i in 1:settings$L){
-      for(j in 1:settings$L){
+    for(i in 1:SETTINGS$L){
+      for(j in 1:SETTINGS$L){
         key<-paste(i,j,sep=",");
         cell_state_array[i,j]<-spatial_grid[[key]]$cell_state;
         free_virus1_array[i,j]<-spatial_grid[[key]]$free_virus1;
@@ -863,19 +754,23 @@ end_simulation<-function(settings,parameters){
         ca_virus2_array[i,j]<-spatial_grid[[key]]$ca_virus2;
       }
     }
-    save(cell_state_array,file=paste(settings$dirname,'/cell_state',sep=''));
-    save(free_virus1_array,file=paste(settings$dirname,'/free_virus1',sep=''));
-    save(ca_virus1_array,file=paste(settings$dirname,'/ca_virus1',sep=''));
-    save(free_virus2_array,file=paste(settings$dirname,'/free_virus2',sep=''));
-    save(ca_virus2_array,file=paste(settings$dirname,'/ca_virus2',sep=''));
+    save(cell_state_array,file=paste(SETTINGS$dirname,'/cell_state',sep=''));
+    save(free_virus1_array,file=paste(SETTINGS$dirname,'/free_virus1',sep=''));
+    save(ca_virus1_array,file=paste(SETTINGS$dirname,'/ca_virus1',sep=''));
+    save(free_virus2_array,file=paste(SETTINGS$dirname,'/free_virus2',sep=''));
+    save(ca_virus2_array,file=paste(SETTINGS$dirname,'/ca_virus2',sep=''));
   }
-  if(settings$visualize=='pdf'){
+  if(SETTINGS$visualize=='pdf'){
     dev.off();
   }
   
   #Plot dynamics
-  plot_dynamics(settings);
+  plot_dynamics();
   
   print(paste("Highest log VL",ifelse(dynamic$max_vl>0,log10(dynamic$max_vl),0),"at t=",dynamic$max_vl_time));
   print(paste("End of simulation at t=",dynamic$time));
 }
+
+# run ---------------------------------------------------------------------
+set.seed(123)
+Spatial_main()
