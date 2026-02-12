@@ -52,33 +52,12 @@ PARAMETERS$ca_to_free_proportion    <- 0.9;     # Proportion of CA virus convert
 PARAMETERS$host_density             <-1;        # Fraction of sites occupied by susceptible cells at start	
 PARAMETERS$diff_range               <-3;        # n x n site, default n = 3, i.e. immediate Moore neighbourhood. 
 
-# main --------------------------------------------------------------------
-Spatial_main <- function() {
-  init_grid();
-  simulation();
-}
+SETTINGS$tot_updates <- SETTINGS$sim_length*PARAMETERS$max_rate; #Compute simulation length in number of updates
 
-## FUNCTIONS: all the functions that are needed for the simulation are below this line
 
-# 2. Initialize grid and other arrays
-init_grid <- function() {
-  print('Starting simulation.. hold on to your hat!');
-  
-  #Compute simulation length in number of updates
-  SETTINGS$tot_updates <<- SETTINGS$sim_length*PARAMETERS$max_rate;
-  
-  #Create spatial grid as an environment for fast hashed access
-  #Each grid location is accessed via key "i,j" and contains a list with cell_state and virus counts for each type
-  spatial_grid <<- new.env(hash=TRUE);
-  for(i in 1:SETTINGS$L){
-    for(j in 1:SETTINGS$L){
-      key <- paste(i,j,sep=",");
-      spatial_grid[[key]]<<-list(cell_state=as.integer(0), 
-                                 free_virus1=as.integer(0), ca_virus1=as.integer(0),
-                                 free_virus2=as.integer(0), ca_virus2=as.integer(0));
-    }
-  }
-  
+# setup -------------------------------------------------------------------
+
+setup <- function() {
   #Directories
   print(paste('Results directory =',SETTINGS$dirname));
   dir.create(SETTINGS$dirname,showWarnings=FALSE);
@@ -88,30 +67,62 @@ init_grid <- function() {
   
   #Dynamic variables - this stores time elapsed and population counts
   dynamic <<- list(num_updates=0,time=0,
-                 susceptible_cells=0,infected_nonprodcells=0,infected_prodcells=0,dead_cells=0,
-                 virions1=0,ca_virions1=0,virions2=0,ca_virions2=0,
-                 max_vl=0,max_vl_time=0,
-                 viral_cells1=0,ca_viral_cells1=0,viral_cells2=0,ca_viral_cells2=0,
-                 coinfected_cells=0);
+                   susceptible_cells=0,infected_nonprodcells=0,infected_prodcells=0,dead_cells=0,
+                   virions1=0,ca_virions1=0,virions2=0,ca_virions2=0,
+                   max_vl=0,max_vl_time=0,
+                   viral_cells1=0,ca_viral_cells1=0,viral_cells2=0,ca_viral_cells2=0,
+                   coinfected_cells=0);
   output_results(dynamic,T); #write header
   
   #Visualization setup
   if(SETTINGS$visualize!='off'){
-    if(SETTINGS$visualize=='pdf'){
-      pdf(file=paste(SETTINGS$dirname,'/Results.pdf',sep=''),
-          width=8,height=4); 
-    }else if(SETTINGS$visualize=='screen'){
-      quartz(width=8,height=4);   
-    }else if(SETTINGS$visualize=='gif'){
-      # library(animation)
-      # png(file=paste(settings$dirname,'/imgs/Results.png',sep=''))
-    }else{
-      stop('Not a valid setting for "visualize"')
-    }   	
-    par(mar=c(1,1,2,1),oma=c(1,0,0,0));
-    layout(matrix(c(1:2),1,2,byrow = TRUE),widths=c(1,1),heights=c(1,1));
+      if(SETTINGS$visualize=='pdf'){
+          pdf(file=paste(SETTINGS$dirname,'/Results.pdf',sep=''),
+              width=8,height=4); 
+      }else if(SETTINGS$visualize=='screen'){
+          quartz(width=8,height=4);   
+      }else if(SETTINGS$visualize=='gif'){
+          # library(animation)
+          # png(file=paste(settings$dirname,'/imgs/Results.png',sep=''))
+      }else{
+          stop('Not a valid setting for "visualize"')
+      }   	
+      par(mar=c(1,1,2,1),oma=c(1,0,0,0));
+      layout(matrix(c(1:2),1,2,byrow = TRUE),widths=c(1,1),heights=c(1,1));
   }
   gc(); 
+}
+
+# main --------------------------------------------------------------------
+Spatial_main <- function() {
+    print('Starting simulation.. hold on to your hat!');
+    setup();
+    init_grid();
+    simulation();
+}
+
+# helper functions --------------------------------------------------------
+
+# 2. Initialize grid and other arrays
+init_grid <- function() {
+
+    #Create spatial grid as an environment for fast hashed access
+    #Each grid location is accessed via key "i,j" and contains a list with 
+    # cell_state and virus counts for each type
+    spatial_grid <<- new.env(hash=TRUE);
+ 
+    for(i in 1:SETTINGS$L) {
+        for(j in 1:SETTINGS$L) {
+            key <- paste(i,j,sep=",");
+            
+            spatial_grid[[key]] <<- list(
+                cell_state=as.integer(0),
+                free_virus1=as.integer(0), 
+                ca_virus1=as.integer(0),
+                free_virus2=as.integer(0),
+                ca_virus2=as.integer(0));
+        }
+    }
 }
 
 # 3. SIMULATION
