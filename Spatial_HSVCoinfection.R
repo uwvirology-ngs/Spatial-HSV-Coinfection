@@ -109,20 +109,29 @@ init_grid <- function() {
     #Create spatial grid as an environment for fast hashed access
     #Each grid location is accessed via key "i,j" and contains a list with 
     # cell_state and virus counts for each type
-    spatial_grid <<- new.env(hash=TRUE);
- 
-    for(i in 1:SETTINGS$L) {
-        for(j in 1:SETTINGS$L) {
-            key <- paste(i,j,sep=",");
-            
-            spatial_grid[[key]] <<- list(
-                cell_state=as.integer(0),
-                free_virus1=as.integer(0), 
-                ca_virus1=as.integer(0),
-                free_virus2=as.integer(0),
-                ca_virus2=as.integer(0));
-        }
-    }
+    
+    # spatial_grid <<- new.env(hash=TRUE);
+    # 
+    # for(i in 1:SETTINGS$L) {
+    #     for(j in 1:SETTINGS$L) {
+    #         key <- paste(i,j,sep=",");
+    #         
+    #         spatial_grid[[key]] <<- list(
+    #             cell_state=as.integer(0),
+    #             free_virus1=as.integer(0), 
+    #             ca_virus1=as.integer(0),
+    #             free_virus2=as.integer(0),
+    #             =as.integer(0));
+    #     }
+    # }
+    
+    spatial_grid <<- list()
+    spatial_grid$cell_state <<- matrix(0L, nrow = SETTINGS$L, ncol = SETTINGS$L)
+    spatial_grid$free_virus1 <<- matrix(0L, nrow = SETTINGS$L, ncol = SETTINGS$L)
+    spatial_grid$ca_virus1 <<- matrix(0L, nrow = SETTINGS$L, ncol = SETTINGS$L)
+    spatial_grid$free_virus2 <<- matrix(0L, nrow = SETTINGS$L, ncol = SETTINGS$L)
+    spatial_grid$ca_virus2 <<- matrix(0L, nrow = SETTINGS$L, ncol = SETTINGS$L)
+    
 }
 
 # 3. SIMULATION
@@ -164,8 +173,15 @@ simulation<-function(){
       dice_cav1<-dice_cav1_all[rep];
       dice_cav2<-dice_cav2_all[rep];
       
-      key<-paste(i,j,sep=",");
-      site<-spatial_grid[[key]];
+      #key<-paste(i,j,sep=",");
+      #site  <- spatial_grid[[key]];
+      site <- list(
+          cell_state = spatial_grid$cell_state[i, j],
+          free_virus1 = spatial_grid$free_virus1[i, j],
+          ca_virus1 = spatial_grid$ca_virus1[i, j],
+          free_virus2 = spatial_grid$free_virus2[i, j],
+          ca_virus2 = spatial_grid$ca_virus2[i, j]
+      )
       
       ##Host cells
       ## 0: vacant site
@@ -179,7 +195,8 @@ simulation<-function(){
         
         #Event 0.1: occupation by susceptible
         if(dice_cells<=PARAMETERS$cell_div/PARAMETERS$max_rate){
-          spatial_grid[[key]]$cell_state<-1;
+          #spatial_grid[[key]]$cell_state<-1;
+          spatial_grid$cell_state[i, j] <<- 1;
         }
         
         
@@ -189,19 +206,23 @@ simulation<-function(){
         #Event 1.1: infection due to free virus at the site (any virus type can infect)
         total_free_virus<-site$free_virus1+site$free_virus2;
         if(total_free_virus>0 && dice_cells<=PARAMETERS$infectivity_free*total_free_virus/PARAMETERS$max_rate){
-          spatial_grid[[key]]$cell_state<-2; #becomes an infected cell
+          #spatial_grid[[key]]$cell_state<-2; #becomes an infected cell
+          spatial_grid$cell_state[i, j] <<- 2;
           #Remove one virus of random type
           virus_probs<-c(site$free_virus1,site$free_virus2)/total_free_virus;
           infecting_type<-sample(1:2,1,prob=virus_probs);
           if(infecting_type==1){
-            spatial_grid[[key]]$free_virus1<-site$free_virus1-1;
+            #spatial_grid[[key]]$free_virus1<-site$free_virus1-1;
+            spatial_grid$free_virus1[i, j] <<- site$free_virus1 - 1
           }else{
-            spatial_grid[[key]]$free_virus2<-site$free_virus2-1;
+            #spatial_grid[[key]]$free_virus2<-site$free_virus2-1;
+            spatial_grid$free_virus2[i, j] <<- site$free_virus2 - 1
           }
           
           #Event 1.2: apoptosis
         }else if(dice_cells<=PARAMETERS$uninf_cell_death/PARAMETERS$max_rate){
-          spatial_grid[[key]]$cell_state<-4;
+          #spatial_grid[[key]]$cell_state<-4;
+          spatial_grid$cell_state[i, j] <<- 4
         } 
         
         #State 2: infected cell (non-virus producing)
@@ -209,11 +230,13 @@ simulation<-function(){
         
         #Event 2.1: become a virus-producing cell
         if(dice_cells<=PARAMETERS$viral_lag/PARAMETERS$max_rate){
-          spatial_grid[[key]]$cell_state<-3; #becomes virus-producing infected cell
+          #spatial_grid[[key]]$cell_state<-3; #becomes virus-producing infected cell
+          spatial_grid$cell_state[i, j] <<- 3
           
           #Event 2.2: dies 
         }else if(dice_cells<=(PARAMETERS$viral_lag+PARAMETERS$uninf_cell_death)/PARAMETERS$max_rate){
-          spatial_grid[[key]]$cell_state<-4; #death of infected cell
+          #spatial_grid[[key]]$cell_state<-4; #death of infected cell
+          spatial_grid$cell_state[i, j] <<- 4
         }
         
         #State 3: infected cell (producing virus)
@@ -221,32 +244,50 @@ simulation<-function(){
         
         #Event 3.1: die
         if(dice_cells<=PARAMETERS$inf_cell_death/PARAMETERS$max_rate){
-          spatial_grid[[key]]$cell_state<-4; #death of infected cell
+          #spatial_grid[[key]]$cell_state<-4; #death of infected cell
+          spatial_grid$cell_state[i, j] <<- 4
           
           #Event 3.2: produce cell-associated virus (virus 1)
         }else{
           new_virus1<-max(0,round(rnorm(1,mean=PARAMETERS$vir_prod_rate_mean/PARAMETERS$max_rate,
                                         sd=PARAMETERS$vir_prod_rate_sd/PARAMETERS$max_rate)));
-          spatial_grid[[key]]$ca_virus1<-site$ca_virus1+new_virus1;
+          #spatial_grid[[key]]$ca_virus1<-site$ca_virus1+new_virus1;
+          spatial_grid$ca_virus1[i, j] <<- site$ca_virus1 + new_virus1
           
           #Event 3.3: produce cell-associated virus (virus 2)
           new_virus2<-max(0,round(rnorm(1,mean=PARAMETERS$vir_prod_rate_mean/PARAMETERS$max_rate,
                                         sd=PARAMETERS$vir_prod_rate_sd/PARAMETERS$max_rate)));
-          spatial_grid[[key]]$ca_virus2<-site$ca_virus2+new_virus2;
+          #spatial_grid[[key]]$ca_virus2<-site$ca_virus2+new_virus2;
+          spatial_grid$ca_virus2[i, j] <<- site$ca_virus2 + new_virus2
         }
       }
       
       
       ##Cell-associated virus - virus 1
       ##--------------------------------------------
-      site<-spatial_grid[[key]];  #Re-fetch site after cell state updates
+      #site<-spatial_grid[[key]];  #Re-fetch site after cell state updates
+      site <- list(
+          cell_state = spatial_grid$cell_state[i, j],
+          free_virus1 = spatial_grid$free_virus1[i, j],
+          ca_virus1 = spatial_grid$ca_virus1[i, j],
+          free_virus2 = spatial_grid$free_virus2[i, j],
+          ca_virus2 = spatial_grid$ca_virus2[i, j]
+      )
+      
       if(site$ca_virus1>0){
         
         #Event 0a: Decay
         ca_viral_decay(i,j,dice_cav1,virus_type=1);
         
         #Event 0b: Ejection to free virus (probability increases with number of CA viruses)
-        site<-spatial_grid[[key]];  #Re-fetch after decay
+        #site<-spatial_grid[[key]];  #Re-fetch after decay
+        site <- list(
+            cell_state = spatial_grid$cell_state[i, j],
+            free_virus1 = spatial_grid$free_virus1[i, j],
+            ca_virus1 = spatial_grid$ca_virus1[i, j],
+            free_virus2 = spatial_grid$free_virus2[i, j],
+            ca_virus2 = spatial_grid$ca_virus2[i, j]
+        )
         if(site$ca_virus1>0 && dice_cav1<=PARAMETERS$viral_ejection_rate*site$ca_virus1/PARAMETERS$max_rate){
           ca_viral_ejection(i,j,virus_type=1);
         }
@@ -254,14 +295,28 @@ simulation<-function(){
       
       ##Cell-associated virus - virus 2
       ##--------------------------------------------
-      site<-spatial_grid[[key]];
+      #site<-spatial_grid[[key]];
+      site <- list(
+          cell_state = spatial_grid$cell_state[i, j],
+          free_virus1 = spatial_grid$free_virus1[i, j],
+          ca_virus1 = spatial_grid$ca_virus1[i, j],
+          free_virus2 = spatial_grid$free_virus2[i, j],
+          ca_virus2 = spatial_grid$ca_virus2[i, j]
+      )
       if(site$ca_virus2>0){
         
         #Event 0a: Decay
         ca_viral_decay(i,j,dice_cav2,virus_type=2);
         
         #Event 0b: Ejection to free virus
-        site<-spatial_grid[[key]];
+        #site<-spatial_grid[[key]];
+        site <- list(
+            cell_state = spatial_grid$cell_state[i, j],
+            free_virus1 = spatial_grid$free_virus1[i, j],
+            ca_virus1 = spatial_grid$ca_virus1[i, j],
+            free_virus2 = spatial_grid$free_virus2[i, j],
+            ca_virus2 = spatial_grid$ca_virus2[i, j]
+        )
         if(site$ca_virus2>0 && dice_cav2<=PARAMETERS$viral_ejection_rate*site$ca_virus2/PARAMETERS$max_rate){
           ca_viral_ejection(i,j,virus_type=2);
         }
@@ -270,7 +325,14 @@ simulation<-function(){
       
       ##Cell-free virus - virus 1
       ##--------------------------------------------
-      site<-spatial_grid[[key]];  #Re-fetch site after CA virus updates
+      #site<-spatial_grid[[key]];  #Re-fetch site after CA virus updates
+      site <- list(
+          cell_state = spatial_grid$cell_state[i, j],
+          free_virus1 = spatial_grid$free_virus1[i, j],
+          ca_virus1 = spatial_grid$ca_virus1[i, j],
+          free_virus2 = spatial_grid$free_virus2[i, j],
+          ca_virus2 = spatial_grid$ca_virus2[i, j]
+      )
       if(site$free_virus1>0){
         
         #Event 0a: Decay
@@ -284,7 +346,14 @@ simulation<-function(){
       
       ##Cell-free virus - virus 2
       ##--------------------------------------------
-      site<-spatial_grid[[key]];
+      #site<-spatial_grid[[key]];
+      site <- list(
+          cell_state = spatial_grid$cell_state[i, j],
+          free_virus1 = spatial_grid$free_virus1[i, j],
+          ca_virus1 = spatial_grid$ca_virus1[i, j],
+          free_virus2 = spatial_grid$free_virus2[i, j],
+          ca_virus2 = spatial_grid$ca_virus2[i, j]
+      )
       if(site$free_virus2>0){
         
         #Event 0a: Decay
@@ -378,16 +447,18 @@ place_host<-function(){
   if(PARAMETERS$host_density==1){
     for(i in 1:SETTINGS$L){
       for(j in 1:SETTINGS$L){
-        key<-paste(i,j,sep=",");
-        spatial_grid[[key]]$cell_state<-1;
+        #key<-paste(i,j,sep=",");
+        #spatial_grid[[key]]$cell_state<-1;
+        spatial_grid$cell_state[i, j] <<- 1
       }
     }
   }else{
     for(i in 1:SETTINGS$L){
       for(j in 1:SETTINGS$L){
         if(runif(1)<PARAMETERS$host_density){
-          key<-paste(i,j,sep=",");
-          spatial_grid[[key]]$cell_state<-1;
+          #key<-paste(i,j,sep=",");
+          #spatial_grid[[key]]$cell_state<-1;
+          spatial_grid$cell_state[i, j] <<- 1
         }
       }
     }
@@ -405,22 +476,26 @@ place_virus<-function(virus_type=1){
     if(place_settings$type=='single point'){ #place virus at the center of the grid
       center_i<-SETTINGS$L/2;
       center_j<-SETTINGS$L/2;
-      key<-paste(center_i,center_j,sep=",");
+      #key<-paste(center_i,center_j,sep=",");
       if(virus_type==1){
-        spatial_grid[[key]]$free_virus1<-place_settings$num;
+        #spatial_grid[[key]]$free_virus1<-place_settings$num;
+        spatial_grid$free_virus1[center_i, center_j] <<- place_settings$num;
       }else{
-        spatial_grid[[key]]$free_virus2<-place_settings$num;
+        #spatial_grid[[key]]$free_virus2<-place_settings$num;
+        spatial_grid$free_virus2[center_i, center_j] <<- place_settings$num;
       }
       
     }else if(place_settings$type=='random'){ #virus spread randomly on grid
       for(v in 1:place_settings$num){
         i<-sample(1:SETTINGS$L,1);
         j<-sample(1:SETTINGS$L,1);
-        key<-paste(i,j,sep=",");
+        #key<-paste(i,j,sep=",");
         if(virus_type==1){
-          spatial_grid[[key]]$free_virus1<-spatial_grid[[key]]$free_virus1+1;
+          #spatial_grid[[key]]$free_virus1<-spatial_grid[[key]]$free_virus1+1;
+          spatial_grid$free_virus1[i, j] <<- spatial_grid$free_virus1[i, j] + 1
         }else{
-          spatial_grid[[key]]$free_virus2<-spatial_grid[[key]]$free_virus2+1;
+          #spatial_grid[[key]]$free_virus2<-spatial_grid[[key]]$free_virus2+1;
+          spatial_grid$free_virus2[i, j] <<- spatial_grid$free_virus2[i, j] + 1
         }
       }
       
@@ -428,14 +503,16 @@ place_virus<-function(virus_type=1){
       if(place_settings$num==1){ #at the center of the grid
         center_i<-SETTINGS$L/2;
         center_j<-SETTINGS$L/2;
-        key<-paste(center_i,center_j,sep=",");
-        spatial_grid[[key]]$cell_state<-3; 
+        #key<-paste(center_i,center_j,sep=",");
+        #spatial_grid[[key]]$cell_state<-3; 
+        spatial_grid$cell_state[center_i, center_j] <<- 3
       }else{ #randomly on the grid
         for(v in 1:place_settings$num){
           i<-sample(1:SETTINGS$L,1);
           j<-sample(1:SETTINGS$L,1);
-          key<-paste(i,j,sep=",");
-          spatial_grid[[key]]$cell_state<-3;
+          #key<-paste(i,j,sep=",");
+          #spatial_grid[[key]]$cell_state<-3;
+          spatial_grid$cell_state[i, j] <<- 3
         }
       }
     }
@@ -463,12 +540,15 @@ visualize<-function(){
   
   for(i in 1:SETTINGS$L){
     for(j in 1:SETTINGS$L){
-      key<-paste(i,j,sep=",");
-      cell_state_array[i,j]<-spatial_grid[[key]]$cell_state;
+      #key<-paste(i,j,sep=",");
+      #cell_state_array[i,j]<-spatial_grid[[key]]$cell_state;
+      cell_state_array[i, j] <- spatial_grid$cell_state[i, j]
       
       #Determine virus type at this site (including coinfection)
-      total_v1<-spatial_grid[[key]]$free_virus1+spatial_grid[[key]]$ca_virus1;
-      total_v2<-spatial_grid[[key]]$free_virus2+spatial_grid[[key]]$ca_virus2;
+      #total_v1<-spatial_grid[[key]]$free_virus1+spatial_grid[[key]]$ca_virus1;
+      total_v1 <- spatial_grid$free_virus1[i, j] + spatial_grid$ca_virus1[i, j]
+      #total_v2<-spatial_grid[[key]]$free_virus2+spatial_grid[[key]]$ca_virus2;
+      total_v2 <- spatial_grid$free_virus2[i, j] + spatial_grid$ca_virus2[i, j]
       
       if(total_v1==0 && total_v2==0){
         virus_type_array[i,j]<-0; #No virus
@@ -524,8 +604,15 @@ compute_gaussian<-function(mask_range,sig=1.2,amp=1){
 
 #DIFFUSION of free virus
 diffusion_virus<-function(i,j,gaussian_mask,virus_type=1){
-  key<-paste(i,j,sep=",");
-  site<-spatial_grid[[key]];
+  #key<-paste(i,j,sep=",");
+  #site<-spatial_grid[[key]];
+  site <- list(
+      cell_state = spatial_grid$cell_state[i, j],
+      free_virus1 = spatial_grid$free_virus1[i, j],
+      ca_virus1 = spatial_grid$ca_virus1[i, j],
+      free_virus2 = spatial_grid$free_virus2[i, j],
+      ca_virus2 = spatial_grid$ca_virus2[i, j]
+  )
   
   #Determine which virus type to work with
   if(virus_type==1){
@@ -537,21 +624,27 @@ diffusion_virus<-function(i,j,gaussian_mask,virus_type=1){
   if(virus_count==1){
     nbr<-pick_nbr(i,j);
     if(!is.null(nbr)){
-      nbr_key<-paste(nbr[1],nbr[2],sep=",");
+      #nbr_key<-paste(nbr[1],nbr[2],sep=",");
       if(virus_type==1){
-        spatial_grid[[key]]$free_virus1<-0;
-        spatial_grid[[nbr_key]]$free_virus1<-spatial_grid[[nbr_key]]$free_virus1+1;
+        #spatial_grid[[key]]$free_virus1<-0;
+        spatial_grid$free_virus1[i, j] <<- 0
+        #spatial_grid[[nbr_key]]$free_virus1<-spatial_grid[[nbr_key]]$free_virus1+1;
+        spatial_grid$free_virus1[nbr[1], nbr[2]] <<- spatial_grid$free_virus1[nbr[1], nbr[2]] + 1
       }else{
-        spatial_grid[[key]]$free_virus2<-0;
-        spatial_grid[[nbr_key]]$free_virus2<-spatial_grid[[nbr_key]]$free_virus2+1;
+        #spatial_grid[[key]]$free_virus2<-0;
+        spatial_grid$free_virus2[i, j] <<- 0
+        #spatial_grid[[nbr_key]]$free_virus2<-spatial_grid[[nbr_key]]$free_virus2+1;
+        spatial_grid$free_virus2[nbr[1], nbr[2]] <<- spatial_grid$free_virus2[nbr[1], nbr[2]] + 1
       }
     }
   }else{
     burst<-gaussburst(virus_count,gaussian_mask);
     if(virus_type==1){
-      spatial_grid[[key]]$free_virus1<-0;
+      #spatial_grid[[key]]$free_virus1<-0;
+      spatial_grid$free_virus1[i, j] <<- 0
     }else{
-      spatial_grid[[key]]$free_virus2<-0;
+      #spatial_grid[[key]]$free_virus2<-0;
+      spatial_grid$free_virus2[i, j] <<- 0
     }
     distrib_progeny(i,j,burst,PARAMETERS$diff_range,virus_type); 
   }
@@ -589,11 +682,13 @@ distrib_progeny<-function(i,j,burst,dist_range,virus_type=1){
       actual_j<-jmin+jj-1;
       burst_i<-imin1+ii-1;
       burst_j<-jmin1+jj-1;
-      key<-paste(actual_i,actual_j,sep=",");
+      #key<-paste(actual_i,actual_j,sep=",");
       if(virus_type==1){
-        spatial_grid[[key]]$free_virus1<-spatial_grid[[key]]$free_virus1+burst[burst_i,burst_j];
+        #spatial_grid[[key]]$free_virus1<-spatial_grid[[key]]$free_virus1+burst[burst_i,burst_j];
+        spatial_grid$free_virus1[actual_i, actual_j] <<- spatial_grid$free_virus1[actual_i, actual_j] + burst[burst_i, burst_j]
       }else{
-        spatial_grid[[key]]$free_virus2<-spatial_grid[[key]]$free_virus2+burst[burst_i,burst_j];
+        #spatial_grid[[key]]$free_virus2<-spatial_grid[[key]]$free_virus2+burst[burst_i,burst_j];
+        spatial_grid$free_virus2[actual_i, actual_j] <<- spatial_grid$free_virus2[actual_i, actual_j] + burst[burst_i, burst_j]
       }
     }
   }
@@ -612,68 +707,100 @@ pick_nbr<-function(i,j){
 
 #DECAY of free virus
 viral_decay<-function(i,j,dice,virus_type=1){
-  key<-paste(i,j,sep=",");
-  site<-spatial_grid[[key]];
+  #key<-paste(i,j,sep=",");
+  site <- list(
+      cell_state = spatial_grid$cell_state[i, j],
+      free_virus1 = spatial_grid$free_virus1[i, j],
+      ca_virus1 = spatial_grid$ca_virus1[i, j],
+      free_virus2 = spatial_grid$free_virus2[i, j],
+      ca_virus2 = spatial_grid$ca_virus2[i, j]
+  )
   
   if(virus_type==1){
     if(site$free_virus1==1){
       if(dice<PARAMETERS$freevirus_decay/PARAMETERS$max_rate){
-        spatial_grid[[key]]$free_virus1<-0;
+        #spatial_grid[[key]]$free_virus1<-0;
+        spatial_grid$free_virus1[i, j] <<- 0
       }
     }else{
-      spatial_grid[[key]]$free_virus1<-round(site$free_virus1*exp(-PARAMETERS$freevirus_decay/PARAMETERS$max_rate));
+      #spatial_grid[[key]]$free_virus1<-round(site$free_virus1*exp(-PARAMETERS$freevirus_decay/PARAMETERS$max_rate));
+      spatial_grid$free_virus1[i, j] <<- round(site$free_virus1*exp(-PARAMETERS$freevirus_decay/PARAMETERS$max_rate));
     }
   }else{
     if(site$free_virus2==1){
       if(dice<PARAMETERS$freevirus_decay/PARAMETERS$max_rate){
-        spatial_grid[[key]]$free_virus2<-0;
+        #spatial_grid[[key]]$free_virus2<-0;
+        spatial_grid$free_virus2[i, j] <<- 0
       }
     }else{
-      spatial_grid[[key]]$free_virus2<-round(site$free_virus2*exp(-PARAMETERS$freevirus_decay/PARAMETERS$max_rate));
+      #spatial_grid[[key]]$free_virus2<-round(site$free_virus2*exp(-PARAMETERS$freevirus_decay/PARAMETERS$max_rate));
+      spatial_grid$free_virus2[i, j] <<- round(site$free_virus2*exp(-PARAMETERS$freevirus_decay/PARAMETERS$max_rate));
     }
   }
 }
 
 #DECAY of cell-associated virus
 ca_viral_decay<-function(i,j,dice,virus_type=1){
-  key<-paste(i,j,sep=",");
-  site<-spatial_grid[[key]];
+  #key<-paste(i,j,sep=",");
+  #site<-spatial_grid[[key]];
+  site <- list(
+      cell_state = spatial_grid$cell_state[i, j],
+      free_virus1 = spatial_grid$free_virus1[i, j],
+      ca_virus1 = spatial_grid$ca_virus1[i, j],
+      free_virus2 = spatial_grid$free_virus2[i, j],
+      ca_virus2 = spatial_grid$ca_virus2[i, j]
+  )
   
   if(virus_type==1){
     if(site$ca_virus1==1){
       if(dice<PARAMETERS$cavirus_decay/PARAMETERS$max_rate){
-        spatial_grid[[key]]$ca_virus1<-0;
+        #spatial_grid[[key]]$ca_virus1<-0;
+        spatial_grid$ca_virus1[i, j] <<- 0
       }
     }else{
-      spatial_grid[[key]]$ca_virus1<-round(site$ca_virus1*exp(-PARAMETERS$cavirus_decay/PARAMETERS$max_rate));
+      #spatial_grid[[key]]$ca_virus1<-round(site$ca_virus1*exp(-PARAMETERS$cavirus_decay/PARAMETERS$max_rate));
+      spatial_grid$ca_virus1[i, j] <<- round(site$ca_virus1*exp(-PARAMETERS$cavirus_decay/PARAMETERS$max_rate));
     }
   }else{
     if(site$ca_virus2==1){
       if(dice<PARAMETERS$cavirus_decay/PARAMETERS$max_rate){
-        spatial_grid[[key]]$ca_virus2<-0;
+        #spatial_grid[[key]]$ca_virus2<-0;
+        spatial_grid$ca_virus2[i, j] <<- 0
       }
     }else{
-      spatial_grid[[key]]$ca_virus2<-round(site$ca_virus2*exp(-PARAMETERS$cavirus_decay/PARAMETERS$max_rate));
+      #spatial_grid[[key]]$ca_virus2<-round(site$ca_virus2*exp(-PARAMETERS$cavirus_decay/PARAMETERS$max_rate));
+      spatial_grid$ca_virus2[i, j] <<- round(site$ca_virus2*exp(-PARAMETERS$cavirus_decay/PARAMETERS$max_rate));
     }
   }
 }
 
 #EJECTION of cell-associated virus to free virus
 ca_viral_ejection<-function(i,j,virus_type=1){
-  key<-paste(i,j,sep=",");
-  site<-spatial_grid[[key]];
+  # key<-paste(i,j,sep=",");
+  # site<-spatial_grid[[key]];
+  site <- list(
+      cell_state = spatial_grid$cell_state[i, j],
+      free_virus1 = spatial_grid$free_virus1[i, j],
+      ca_virus1 = spatial_grid$ca_virus1[i, j],
+      free_virus2 = spatial_grid$free_virus2[i, j],
+      ca_virus2 = spatial_grid$ca_virus2[i, j]
+  )
   
   if(virus_type==1 && site$ca_virus1>0){
     num_to_eject<-round(site$ca_virus1*PARAMETERS$ca_to_free_proportion);
     if(num_to_eject>0){
-      spatial_grid[[key]]$ca_virus1<-site$ca_virus1-num_to_eject;
-      spatial_grid[[key]]$free_virus1<-site$free_virus1+num_to_eject;
+      #spatial_grid[[key]]$ca_virus1<-site$ca_virus1-num_to_eject;
+      spatial_grid$ca_virus1[i, j] <<- site$ca_virus1 - num_to_eject
+      #spatial_grid[[key]]$free_virus1<-site$free_virus1+num_to_eject;
+      spatial_grid$free_virus1[i, j] <<- site$free_virus1 + num_to_eject
     }
   }else if(virus_type==2 && site$ca_virus2>0){
     num_to_eject<-round(site$ca_virus2*PARAMETERS$ca_to_free_proportion);
     if(num_to_eject>0){
-      spatial_grid[[key]]$ca_virus2<-site$ca_virus2-num_to_eject;
-      spatial_grid[[key]]$free_virus2<-site$free_virus2+num_to_eject;
+      #spatial_grid[[key]]$ca_virus2<-site$ca_virus2-num_to_eject;
+      spatial_grid$ca_virus2[i, j] <<- site$ca_virus2 - num_to_eject
+      #spatial_grid[[key]]$free_virus2<-site$free_virus2+num_to_eject;
+      spatial_grid$free_virus2[i, j] <<- site$free_virus2 + num_to_eject
     }
   }
 }
@@ -713,8 +840,15 @@ compute_totals<-function(){
   
   for(i in 1:SETTINGS$L){
     for(j in 1:SETTINGS$L){
-      key<-paste(i,j,sep=",");
-      site<-spatial_grid[[key]];
+      # key<-paste(i,j,sep=",");
+      # site<-spatial_grid[[key]];
+      site <- list(
+          cell_state = spatial_grid$cell_state[i, j],
+          free_virus1 = spatial_grid$free_virus1[i, j],
+          ca_virus1 = spatial_grid$ca_virus1[i, j],
+          free_virus2 = spatial_grid$free_virus2[i, j],
+          ca_virus2 = spatial_grid$ca_virus2[i, j]
+      )
       
       dynamic$virions1<<-dynamic$virions1+site$free_virus1;
       dynamic$ca_virions1<<-dynamic$ca_virions1+site$ca_virus1;
@@ -757,12 +891,17 @@ end_simulation<-function(){
     
     for(i in 1:SETTINGS$L){
       for(j in 1:SETTINGS$L){
-        key<-paste(i,j,sep=",");
-        cell_state_array[i,j]<-spatial_grid[[key]]$cell_state;
-        free_virus1_array[i,j]<-spatial_grid[[key]]$free_virus1;
-        ca_virus1_array[i,j]<-spatial_grid[[key]]$ca_virus1;
-        free_virus2_array[i,j]<-spatial_grid[[key]]$free_virus2;
-        ca_virus2_array[i,j]<-spatial_grid[[key]]$ca_virus2;
+        # key<-paste(i,j,sep=",");
+        # cell_state_array[i,j]<-spatial_grid[[key]]$cell_state;
+        cell_state_array[i, j] <- spatial_grid$cell_state[i, j]
+        # free_virus1_array[i,j]<-spatial_grid[[key]]$free_virus1;
+        free_virus1_array[i, j] <- spatial_grid$free_virus1[i, j]
+        # ca_virus1_array[i,j]<-spatial_grid[[key]]$ca_virus1;
+        ca_virus1_array[i, j] <- spatial_grid$ca_virus1[i, j]
+        # free_virus2_array[i,j]<-spatial_grid[[key]]$free_virus2;
+        free_virus2_array[i, j] <- spatial_grid$free_virus2[i, j]
+        # ca_virus2_array[i,j]<-spatial_grid[[key]]$ca_virus2;
+        ca_virus2_array[i, j] <- spatial_grid$ca_virus2[i, j]
       }
     }
     save(cell_state_array,file=paste(SETTINGS$dirname,'/cell_state',sep=''));
@@ -784,4 +923,9 @@ end_simulation<-function(){
 
 # run ---------------------------------------------------------------------
 set.seed(123)
-Spatial_main()
+
+library(profvis)
+profvis({
+    Spatial_main()
+})
+
