@@ -646,7 +646,7 @@ diffusion_virus<-function(i,j,gaussian_mask,virus_type=1){
       #spatial_grid[[key]]$free_virus2<-0;
       spatial_grid$free_virus2[i, j] <<- 0
     }
-    distrib_progeny(i,j,burst,PARAMETERS$diff_range,virus_type); 
+    distrib_progeny(i,j,burst,virus_type); 
   }
 }
 
@@ -669,29 +669,33 @@ gaussburst<-function(burst_size,gaussian_mask){
 }
 
 #DISTRIBUTE PROGENY in free virus array for burst or diffusion
-distrib_progeny<-function(i,j,burst,dist_range,virus_type=1){
-  temp2<-(dist_range-1)/2;
-  imin<-max(1,i-temp2);imax<-min(i+temp2,SETTINGS$L); #deal with edges
-  jmin<-max(1,j-temp2);jmax<-min(j+temp2,SETTINGS$L);
-  imin1<-temp2-(i-imin)+1;imax1<-temp2+(imax-i)+1;
-  jmin1<-temp2-(j-jmin)+1;jmax1<-temp2+(jmax-j)+1;
-  
-  for(ii in 1:length(imin:imax)){
-    for(jj in 1:length(jmin:jmax)){
-      actual_i<-imin+ii-1;
-      actual_j<-jmin+jj-1;
-      burst_i<-imin1+ii-1;
-      burst_j<-jmin1+jj-1;
-      #key<-paste(actual_i,actual_j,sep=",");
-      if(virus_type==1){
-        #spatial_grid[[key]]$free_virus1<-spatial_grid[[key]]$free_virus1+burst[burst_i,burst_j];
-        spatial_grid$free_virus1[actual_i, actual_j] <<- spatial_grid$free_virus1[actual_i, actual_j] + burst[burst_i, burst_j]
-      }else{
-        #spatial_grid[[key]]$free_virus2<-spatial_grid[[key]]$free_virus2+burst[burst_i,burst_j];
-        spatial_grid$free_virus2[actual_i, actual_j] <<- spatial_grid$free_virus2[actual_i, actual_j] + burst[burst_i, burst_j]
-      }
+distrib_progeny <- function(i, j, burst, virus_type=1) {
+    
+    # determine the splatter zone!
+    dist <- (PARAMETERS$diff_range - 1) / 2
+    
+    # bounds for the cells we're updating
+    imin <- max(i - dist, 1)
+    imax <- min(i + dist, SETTINGS$L)
+    jmin <- max(j - dist, 1)
+    jmax <- min(j + dist, SETTINGS$L)
+    
+    # iteratize over the cells to update
+    for (a in seq(from = imin, to = imax, by = 1)) {
+        for (b in seq(from = jmin, to = jmax, by = 1)) {
+            
+            # indices for burst matrix
+            burst_i <- a - i + (dist + 1)
+            burst_j <- b - j + (dist + 1)
+            
+            # increment the value of free_virus1 or 2 by the corresponding value in burst
+            if(virus_type == 1) {
+                spatial_grid$free_virus1[a, b] <<- spatial_grid$free_virus1[a, b] + burst[burst_i, burst_j]
+            } else {
+                spatial_grid$free_virus2[a, b] <<- spatial_grid$free_virus2[a, b] + burst[burst_i, burst_j]
+            }
+        }
     }
-  }
 }
 
 #PICK NEIGHBOUR from immediate moore neighbourhood
