@@ -675,26 +675,25 @@ distrib_progeny <- function(i, j, burst, virus_type=1) {
     dist <- (PARAMETERS$diff_range - 1) / 2
     
     # bounds for the cells we're updating
-    imin <- max(i - dist, 1)
-    imax <- min(i + dist, SETTINGS$L)
-    jmin <- max(j - dist, 1)
-    jmax <- min(j + dist, SETTINGS$L)
+    i_min <- max(i - dist, 1)
+    i_max <- min(i + dist, SETTINGS$L)
+    j_min <- max(j - dist, 1)
+    j_max <- min(j + dist, SETTINGS$L)
     
-    # iteratize over the cells to update
-    for (a in seq(from = imin, to = imax, by = 1)) {
-        for (b in seq(from = jmin, to = jmax, by = 1)) {
-            
-            # indices for burst matrix
-            burst_i <- a - i + (dist + 1)
-            burst_j <- b - j + (dist + 1)
-            
-            # increment the value of free_virus1 or 2 by the corresponding value in burst
-            if(virus_type == 1) {
-                spatial_grid$free_virus1[a, b] <<- spatial_grid$free_virus1[a, b] + burst[burst_i, burst_j]
-            } else {
-                spatial_grid$free_virus2[a, b] <<- spatial_grid$free_virus2[a, b] + burst[burst_i, burst_j]
-            }
-        }
+    # bounds we need from the burst matrix
+    i_min_burst <- i_min - i + (dist + 1)
+    i_max_burst <- i_max - i + (dist + 1)
+    j_min_burst <- j_min - j + (dist + 1)
+    j_max_burst <- j_max - j + (dist + 1)
+    
+    # get burst matrix
+    splatter <- burst[i_min_burst:i_max_burst, j_min_burst:j_max_burst]
+        
+    # add burst matrix to cells to update
+    if (virus_type == 1) {
+        spatial_grid$free_virus1[i_min:i_max, j_min:j_max] <<- spatial_grid$free_virus1[i_min:i_max, j_min:j_max] + splatter
+    } else {
+        spatial_grid$free_virus2[i_min:i_max, j_min:j_max] <<- spatial_grid$free_virus2[i_min:i_max, j_min:j_max] + splatter
     }
 }
 
