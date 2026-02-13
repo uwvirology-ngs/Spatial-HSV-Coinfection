@@ -821,56 +821,29 @@ output_results<-function(results,header){
 
 # Compute totals of cells and virus
 compute_totals<-function(){
+  
   dynamic$time<<-dynamic$num_updates/PARAMETERS$max_rate;
   
-  #Count by iterating through spatial_grid
-  dynamic$virions1<<-0;
-  dynamic$ca_virions1<<-0;
-  dynamic$virions2<<-0;
-  dynamic$ca_virions2<<-0;
-  dynamic$susceptible_cells<<-0;
-  dynamic$infected_nonprodcells<<-0;
-  dynamic$infected_prodcells<<-0;
-  dynamic$dead_cells<<-0;
-  dynamic$viral_cells1<<-0;
-  dynamic$ca_viral_cells1<<-0;
-  dynamic$viral_cells2<<-0;
-  dynamic$ca_viral_cells2<<-0;
-  dynamic$coinfected_cells<<-0;
+  dynamic$virions1    <<- sum(spatial_grid$free_virus1)
+  dynamic$ca_virions1 <<- sum(spatial_grid$ca_virus1)
+  dynamic$virions2    <<- sum(spatial_grid$free_virus2)
+  dynamic$ca_virions2 <<- sum(spatial_grid$ca_virus2)
   
-  for(i in 1:SETTINGS$L){
-    for(j in 1:SETTINGS$L){
-      # key<-paste(i,j,sep=",");
-      # site<-spatial_grid[[key]];
-      site <- list(
-          cell_state = spatial_grid$cell_state[i, j],
-          free_virus1 = spatial_grid$free_virus1[i, j],
-          ca_virus1 = spatial_grid$ca_virus1[i, j],
-          free_virus2 = spatial_grid$free_virus2[i, j],
-          ca_virus2 = spatial_grid$ca_virus2[i, j]
-      )
-      
-      dynamic$virions1<<-dynamic$virions1+site$free_virus1;
-      dynamic$ca_virions1<<-dynamic$ca_virions1+site$ca_virus1;
-      dynamic$virions2<<-dynamic$virions2+site$free_virus2;
-      dynamic$ca_virions2<<-dynamic$ca_virions2+site$ca_virus2;
-      
-      if(site$free_virus1>0) dynamic$viral_cells1<<-dynamic$viral_cells1+1;
-      if(site$ca_virus1>0) dynamic$ca_viral_cells1<<-dynamic$ca_viral_cells1+1;
-      if(site$free_virus2>0) dynamic$viral_cells2<<-dynamic$viral_cells2+1;
-      if(site$ca_virus2>0) dynamic$ca_viral_cells2<<-dynamic$ca_viral_cells2+1;
-      
-      #Track coinfection: sites with both virus types present (free or CA)
-      has_v1<-(site$free_virus1>0 || site$ca_virus1>0);
-      has_v2<-(site$free_virus2>0 || site$ca_virus2>0);
-      if(has_v1 && has_v2) dynamic$coinfected_cells<<-dynamic$coinfected_cells+1;
-      
-      if(site$cell_state==1) dynamic$susceptible_cells<<-dynamic$susceptible_cells+1;
-      if(site$cell_state==2) dynamic$infected_nonprodcells<<-dynamic$infected_nonprodcells+1;
-      if(site$cell_state==3) dynamic$infected_prodcells<<-dynamic$infected_prodcells+1;
-      if(site$cell_state==4) dynamic$dead_cells<<-dynamic$dead_cells+1;
-    }
-  }
+  dynamic$viral_cells1    <<- sum(spatial_grid$free_virus1 > 0)
+  dynamic$ca_viral_cells1 <<- sum(spatial_grid$ca_virus1   > 0)
+  dynamic$viral_cells2    <<- sum(spatial_grid$free_virus2 > 0)
+  dynamic$ca_viral_cells2 <<- sum(spatial_grid$ca_virus2   > 0)
+  
+  # coinfections (sites with both virus types present (free or CA))
+  dynamic$coinfected_cells <<- sum(
+      (spatial_grid$free_virus1 > 0 | spatial_grid$ca_virus1 > 0) &
+      (spatial_grid$free_virus2 > 0 | spatial_grid$ca_virus2 > 0)
+  )
+  
+  dynamic$susceptible_cells     <<- sum(spatial_grid$cell_state == 1)
+  dynamic$infected_nonprodcells <<- sum(spatial_grid$cell_state == 2)
+  dynamic$infected_prodcells    <<- sum(spatial_grid$cell_state == 3)
+  dynamic$dead_cells            <<- sum(spatial_grid$cell_state == 4)
   
   total_virions<-dynamic$virions1+dynamic$virions2;
   if (total_virions > dynamic$max_vl) {
